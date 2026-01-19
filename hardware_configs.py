@@ -12,10 +12,6 @@ from collections import deque
 class LinearTopology:
     """
     Linear 3-qubit topology: P0 — P1 — P2
-    
-    This represents a quantum processor with 3 physical qubits
-    connected in a linear chain. Only adjacent qubits can perform
-    two-qubit gates directly.
     """
     
     def __init__(self):
@@ -31,16 +27,6 @@ class LinearTopology:
         }
     
     def are_adjacent(self, qubit1: str, qubit2: str) -> bool:
-        """
-        Check if two physical qubits are adjacent in the topology.
-        
-        Args:
-            qubit1: First physical qubit (e.g., 'P0')
-            qubit2: Second physical qubit (e.g., 'P1')
-            
-        Returns:
-            True if qubits are directly connected, False otherwise
-        """
         if qubit1 not in self.coupling_graph:
             return False
         return qubit2 in self.coupling_graph[qubit1]
@@ -48,13 +34,6 @@ class LinearTopology:
     def shortest_path(self, start: str, end: str) -> List[str]:
         """
         Find the shortest path between two physical qubits using BFS.
-        
-        Args:
-            start: Starting physical qubit
-            end: Target physical qubit
-            
-        Returns:
-            List of physical qubits representing the path (including start and end)
         """
         if start == end:
             return [start]
@@ -73,19 +52,10 @@ class LinearTopology:
                     visited.add(neighbor)
                     queue.append((neighbor, path + [neighbor]))
         
-        return []  # No path found
+        return []
     
     
     def get_neighbors(self, qubit: str) -> Set[str]:
-        """
-        Get all neighbors of a physical qubit.
-        
-        Args:
-            qubit: Physical qubit identifier
-            
-        Returns:
-            Set of neighboring physical qubits
-        """
         return self.coupling_graph.get(qubit, set())
 
     def get_fidelity(self, qubit1: str, qubit2: str) -> float:
@@ -112,13 +82,8 @@ class Grid2x2Topology(LinearTopology):
     P0 — P1
     |    |
     P2 — P3
-    
-    This represents a quantum processor with 4 physical qubits
-    connected in a 2x2 grid. Each qubit has 2 neighbors.
     """
-    
     def __init__(self):
-        # Physical qubit labels
         self.physical_qubits = ['P0', 'P1', 'P2', 'P3']
         
         # Adjacency list representation of coupling graph
@@ -140,14 +105,7 @@ class Grid2x2Topology(LinearTopology):
 
 class HeavyHexTopology(LinearTopology):
     """
-    Heavy-Hex Topology (simplified).
-    
-    Modeled after IBM Quantum 'Falcon' processors (e.g., 27 qubits).
-    The heavy-hex lattice is a hexagonal lattice where each edge of the 
-    hexagons is replaced by two edges connected by a new node.
-    
-    For this project, we implement a small subgraph of a heavy-hex lattice
-    to demonstrate the connectivity constraints.
+    Heavy-Hex Topology
     
     Structure (simplified 14-qubit patch):
     
@@ -165,7 +123,6 @@ class HeavyHexTopology(LinearTopology):
     def __init__(self):
         self.physical_qubits = [f'P{i}' for i in range(14)]
         
-        # Manually defining a small heavy-hex-like patch
         connections = [
             (0, 1), (1, 2),
             (0, 4), (2, 6),
@@ -186,7 +143,6 @@ class HeavyHexTopology(LinearTopology):
             self.coupling_graph[p_u].add(p_v)
             self.coupling_graph[p_v].add(p_u)
             
-        # Mock fidelity data (1.0 = perfect, 0.0 = broken)
         # In a real scenario, this would come from IBM Quantum API
         self.fidelities = {
             (u, v): 0.99 for u in self.coupling_graph for v in self.coupling_graph[u]
@@ -198,13 +154,10 @@ class HeavyHexTopology(LinearTopology):
         self.fidelities[('P11', 'P9')] = 0.95
 
     def get_fidelity(self, q1: str, q2: str) -> float:
-        """Get fidelity of the link between two qubits."""
         return self.fidelities.get((q1, q2), 0.0)
 
     def __str__(self) -> str:
         return "Heavy-Hex Topology: 14-qubit simplified patch"
 
 
-# Default hardware configuration
-# Switch between LinearTopology(), Grid2x2Topology(), and HeavyHexTopology()
 DEFAULT_TOPOLOGY = HeavyHexTopology()

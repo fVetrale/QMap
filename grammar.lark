@@ -1,0 +1,23 @@
+// Lark Grammar for QMap Quantum Circuit Instructions
+// Supports basic quantum gates: H, X, Z (single-qubit) and CNOT (two-qubit)
+
+start: instruction+
+
+instruction: single_qubit_gate | two_qubit_gate
+
+// Single-qubit gates: H qX, X qX, Z qX
+single_qubit_gate: GATE_NAME qubit
+
+GATE_NAME: "H" | "X" | "Z"
+
+// Two-qubit gates: CNOT qX, qY
+two_qubit_gate: "CNOT" qubit "," qubit
+
+// Qubit identifier: q followed by a number (e.g., q0, q1, q2)
+qubit: "q" NUMBER
+
+NUMBER: /[0-9]+/
+
+// Ignore whitespace and newlines
+%import common.WS
+%ignore WS

@@ -1,0 +1,9 @@
+H q0
+X q1
+H q2
+X q3
+CNOT q0, q3
+CNOT q1, q2
+Z q2
+CNOT q0, q2
+CNOT q1, q3

@@ -24,6 +24,15 @@ P3 -- P4 -- P5 -- P6 -- P7
 
 Supporta inoltre la gestione della **fedeltà (fidelity)** delle connessioni, penalizzando l'uso di link rumorosi durante il routing.
 
+## Novità
+
+Sono state aggiunte le seguenti funzionalità:
+
+1.  **Register Renaming**: L'output OpenQASM ora utilizza il registro `q` (invece di `p`) per maggiore compatibilità.
+2.  **Initial Mapping**: Implementata strategia `CenterLayout` che posiziona i qubit logici sui nodi fisici più interconnessi.
+3.  **AerSimulator**: Integrazione diretta con il simulatore Qiskit Aer.
+4.  **Confronto Qiskit**: Benchmark automatico contro il transpiler di Qiskit.
+
 ## Struttura del Progetto
 
 ```
@@ -32,7 +41,9 @@ ProgettoIlp/
 ├── hardware_configs.py    # Definizione topologia Heavy-Hex e fedeltà
 ├── qmap_dialect.py        # Sistema di tipi e operazioni QMap
 ├── optimizer.py           # Ottimizzatore SABRE con Look-ahead e fedeltà
-├── openqasm_exporter.py   # Esportatore per OpenQASM 3.0
+├── openqasm_exporter.py   # Esportatore per OpenQASM 2.0
+├── simulation.py          # Script per esecuzione su AerSimulator
+├── benchmark_qiskit.py    # Script di confronto con Qiskit SDK
 ├── compare_algorithms.py  # Script di benchmark multi-topologia
 ├── test_esame.py          # Suite di test interattiva
 ├── main.py                # Coordinatore principale
@@ -62,27 +73,41 @@ Sistema di tipi e operazioni MLIR-style:
 ### 4. optimizer.py
 
 Implementa `QMapOptimizerPass` con algoritmo SABRE avanzato:
-1. **Look-ahead**: Valuta non solo il gate corrente ma anche il "Front Layer" futuro.
-2. **Fidelity-aware**: Preferisce SWAP su link ad alta fedeltà anche se il percorso è leggermente più lungo.
-3. Inserisce SWAP ottimali per minimizzare costo totale e distanza.
+1. **Initial Mapping**: Usa `CenterLayout` per mappare i qubit nelle posizioni migliori.
+2. **Look-ahead**: Valuta non solo il gate corrente ma anche il "Front Layer" futuro.
+3. **Tabu Search**: Previene oscillazioni (cicli di SWAP infiniti).
+4. **Fidelity-aware**: Preferisce SWAP su link ad alta fedeltà.
 
 ### 5. openqasm_exporter.py
 
-Converte l'IR ottimizzato (con SWAP fisici) in codice **OpenQASM 3.0** compatibile con backend IBM.
+Converte l'IR ottimizzato (con SWAP fisici) in codice **OpenQASM 2.0** compatibile con backend IBM e AerSimulator. Usa registri `q` e `c`.
 
 ### 6. main.py
 
 Coordina il flusso completo e salva il risultato in `output_circuit.qasm`.
 
+### 7. simulation.py
+
+Esegue il file `output_circuit.qasm` generato utilizzando **AerSimulator** di Qiskit e stampa i conteggi delle misurazioni.
+
+### 8. benchmark_qiskit.py
+
+Esegue un confronto diretto tra QMap e il transpiler di Qiskit (optimization_level=3) misurando:
+- Numero di SWAP
+- Profondità del circuito (Operations)
+- Tempo di esecuzione
+
 ## Installazione
 
-Installa le dipendenze:
+Installa le dipendenze (lark + qiskit):
 
 ```bash
-pip install lark
+pip install lark qiskit qiskit-aer
 ```
 
 ## Utilizzo
+
+### Compilazione Standard
 
 Esegui il programma principale:
 
@@ -92,9 +117,25 @@ python main.py
 
 L'output verrà salvato in `output_circuit.qasm`.
 
+### Simulazione
+
+Per verificare il risultato:
+
+```bash
+python simulation.py output_circuit.qasm
+```
+
+### Benchmark Qiskit
+
+Per vedere il confronto richiesto dal prof:
+
+```bash
+python benchmark_qiskit.py
+```
+
 ### Benchmark Topologie
 
-Per confrontare le performance su diverse topologie (Lineare, Grid 2x2, Heavy-Hex) e vedere le metriche di SWAP inseriti:
+Per confrontare le performance su diverse topologie (Lineare, Grid 2x2, Heavy-Hex):
 
 ```bash
 python compare_algorithms.py
@@ -108,7 +149,7 @@ Per avviare la suite di test interattiva che guida attraverso la generazione di 
 python test_esame.py
 ```
 
-### Esempio di Output
+## Esempio di Output
 
 ```
 🔬 QMap: MLIR Dialect for Qubit Mapping
@@ -133,9 +174,9 @@ L'algoritmo di routing non è puramente greedy. Utilizza una tecnica di **look-a
 - Distanza fisica aggiunta/rimossa.
 - **Fedeltà** del link fisico coinvolto nello SWAP (penalità per link rumorosi).
 
-### Esportazione OpenQASM 3.0
+### Esportazione OpenQASM 2.0
 
-Il mapping finale viene tradotto in OpenQASM 3.0, mappando i qubit logici sui qubit fisici definiti nell'header `qubit[N] p;`.
+Il mapping finale viene tradotto in OpenQASM 2.0, mappando i qubit logici sui qubit fisici definiti nell'header `qreg q[N];`.
 
 ## Limitazioni e Estensioni Future
 

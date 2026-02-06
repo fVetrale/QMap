@@ -19,13 +19,19 @@ class OpenQASMExporter:
         Convert IR to OpenQASM 3.0 string.
         """
         self.qasm_lines = [
-            "OPENQASM 3.0;",
-            "include \"stdgates.inc\";",
-            f"qubit[{self.num_physical_qubits}] p;"
+            "OPENQASM 2.0;",
+            "include \"qelib1.inc\";",
+            f"qreg q[{self.num_physical_qubits}];",
+            f"creg c[{self.num_physical_qubits}];"
         ]
         
         for op in ir.operations:
             self._process_operation(op)
+            
+        # Add default measurement for all used qubits if not present
+        # Simple heuristic: measure all
+        for i in range(self.num_physical_qubits):
+             self.qasm_lines.append(f"measure q[{i}] -> c[{i}];")
             
         return "\n".join(self.qasm_lines)
     
@@ -39,14 +45,14 @@ class OpenQASMExporter:
             # Physical SWAP
             p1 = op.qubit1.id
             p2 = op.qubit2.id
-            self.qasm_lines.append(f"swap p[{p1}], p[{p2}];")
+            self.qasm_lines.append(f"swap q[{p1}], q[{p2}];")
             
         elif isinstance(op, SingleQubitGateOp):
             # Logical gate mapped to physical
             lid = op.qubit.id
             pid = self.logical_to_physical.get(lid, lid) # Default to identity if missing
             gate = op.gate.lower()
-            self.qasm_lines.append(f"{gate} p[{pid}];")
+            self.qasm_lines.append(f"{gate} q[{pid}];")
             
         elif isinstance(op, TryTwoQubitOp):
             # Logical two-qubit gate mapped to physical
@@ -59,5 +65,11 @@ class OpenQASMExporter:
             gate = op.gate.lower()
             if gate == 'cnot':
                 gate = 'cx'
+        elif isinstance(op, MeasureOp):
+            # Logical measure mapped to physical
+            lid = op.qubit.id
+            pid = self.logical_to_physical.get(lid, lid) # Default to identity if missing
+            # In QASM 2.0 measure q -> c
+            self.qasm_lines.append(f"measure q[{pid}] -> c[{pid}];")
                 
-            self.qasm_lines.append(f"{gate} p[{c_pid}], p[{t_pid}];")
+            self.qasm_lines.append(f"{gate} q[{c_pid}], q[{t_pid}];")

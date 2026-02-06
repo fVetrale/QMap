@@ -6,22 +6,71 @@ from qmap_dialect import (
 from hardware_configs import LinearTopology
 
 
+
+from abc import ABC, abstractmethod
+
+class InitialLayoutStrategy(ABC):
+    @abstractmethod
+    def generate(self, num_logical_qubits: int, topology: LinearTopology) -> Dict[LogicalQubit, PhysicalQubit]:
+        pass
+
+class TrivialLayout(InitialLayoutStrategy):
+    """
+    Mappatura 1:1 semplice: q0 -> P0, q1 -> P1, ecc.
+    """
+    def generate(self, num_logical_qubits: int, topology: LinearTopology) -> Dict[LogicalQubit, PhysicalQubit]:
+        return {
+            LogicalQubit(i): PhysicalQubit(i) 
+            for i in range(num_logical_qubits)
+        }
+
+class CenterLayout(InitialLayoutStrategy):
+    """
+    Mappa i qubit logici ai qubit fisici con il grado di connettività più alto (più centrali).
+    Utile per circuiti densi o topologie non uniformi (come Heavy-Hex).
+    """
+    def generate(self, num_logical_qubits: int, topology: LinearTopology) -> Dict[LogicalQubit, PhysicalQubit]:
+        # Calcola il grado (numero di vicini) per ogni qubit fisico
+        degrees = []
+        for pq_str in topology.physical_qubits: # Assume topology exposes physical_qubits list of strings
+             # Extract ID from "P0", "P1" etc. if needed, but topology.physical_qubits are strings like "P0"
+             # hardware_configs.py implementations use lists of strings ['P0', 'P1', ...]
+             neighbors = topology.get_neighbors(pq_str)
+             degrees.append((pq_str, len(neighbors)))
+        
+        # Ordina per grado decrescente
+        degrees.sort(key=lambda x: x[1], reverse=True)
+        
+        # Seleziona i primi N qubit fisici
+        # Attenzione: bisogna gestire il caso in cui num_logical > num_physical, ma per ora assumiamo che ci stiano
+        layout = {}
+        for i in range(num_logical_qubits):
+            if i < len(degrees):
+                pq_str = degrees[i][0]
+                # Estrae l'ID intero dalla stringa "P<id>"
+                pq_id = int(pq_str[1:])
+                layout[LogicalQubit(i)] = PhysicalQubit(pq_id)
+            else:
+                # Fallback se finiamo i qubit fisici della topologia (non dovrebbe accadere se il check è fatto a monte)
+                layout[LogicalQubit(i)] = PhysicalQubit(i)
+                
+        return layout
+
+
 class QMapOptimizerPass:
     """
     Questo passo scansiona l'IR per operazioni a due qubit e controlla se i
     qubit fisici sono adiacenti. Se non lo sono, inserisce operazioni SWAP
     per avvicinare i qubit.
     """
-    def __init__(self, topology: LinearTopology):
+    def __init__(self, topology: LinearTopology, layout_strategy: InitialLayoutStrategy = None):
         self.topology = topology
+        # Default to CenterLayout if not specified, as it generally performs better on complex topologies
+        self.layout_strategy = layout_strategy or CenterLayout()
         self.current_layout: Dict[LogicalQubit, PhysicalQubit] = {}
     
     def initialize_layout(self, num_qubits: int) -> CurrentLayoutOp:
-        
-        self.current_layout = {
-            LogicalQubit(i): PhysicalQubit(i) 
-            for i in range(num_qubits)
-        }
+        self.current_layout = self.layout_strategy.generate(num_qubits, self.topology)
         return CurrentLayoutOp(self.current_layout)
     
     def get_physical_qubits(self, lq1: LogicalQubit, lq2: LogicalQubit) -> tuple[PhysicalQubit, PhysicalQubit]:
@@ -119,7 +168,7 @@ class QMapOptimizerPass:
         
         return [(PhysicalQubit(a), PhysicalQubit(b)) for a, b in candidate_swaps]
     
-    def _select_best_swap(self, front_layer: List[TryTwoQubitOp], debug: bool = False) -> Optional[InsertSwapOp]:
+    def _select_best_swap(self, front_layer: List[TryTwoQubitOp], tabu_list: List[set] = None, debug: bool = False) -> Optional[InsertSwapOp]:
         """
         Seleziona il miglior SWAP usando la funzione di costo H del look-ahead
         e la fedeltà (fedeltà) dei link fisici.
@@ -140,6 +189,14 @@ class QMapOptimizerPass:
             print(f"  Front Layer: {[f'{g.gate}({g.control},{g.target})' for g in front_layer]}")
         
         for pq1, pq2 in candidate_swaps:
+            # Check if this pair is in the tabu list
+            if tabu_list:
+                current_pair = {pq1.id, pq2.id}
+                if current_pair in tabu_list:
+                    if debug:
+                        print(f"    SWAP {pq1}↔{pq2}: SKIPPED (Tabu)")
+                    continue
+            
             #layout temporaneo
             potential_layout = self.current_layout.copy()
             
@@ -217,8 +274,18 @@ class QMapOptimizerPass:
                 front_layer = self._build_front_layer(remaining_ops[op_index:])
                 
                 num_swaps_for_gate = 0
+                # Tabu list to store the last N swaps (reversed)
+                # Stores sets of {id1, id2} to avoid reversing them
+                tabu_list = []
+                MAX_TABU_SIZE = 3
+                MAX_SWAPS_PER_GATE = 20
+                
                 while not self.topology.are_adjacent(str(pq1), str(pq2)):
-                    best_swap = self._select_best_swap(front_layer, debug=debug)
+                    if num_swaps_for_gate >= MAX_SWAPS_PER_GATE:
+                        print(f"⚠️  Warning: Max swaps ({MAX_SWAPS_PER_GATE}) reached for {op}. Stopping optimization for this gate.")
+                        break
+                        
+                    best_swap = self._select_best_swap(front_layer, tabu_list=tabu_list, debug=debug)
                     
                     if best_swap is None:
                         print(f"⚠️  Warning: No SWAP candidates found for {op}")
@@ -227,9 +294,17 @@ class QMapOptimizerPass:
                     optimized_ops.append(best_swap)
                     
                     self._apply_swap(best_swap.qubit1, best_swap.qubit2)
+                    
+                    # Add reverse of this swap to tabu list
+                    # {p1, p2}
+                    tabu_list.append({best_swap.qubit1.id, best_swap.qubit2.id})
+                    if len(tabu_list) > MAX_TABU_SIZE:
+                        tabu_list.pop(0)
+                    
                     num_swaps_for_gate += 1
                     pq1, pq2 = self.get_physical_qubits(op.control, op.target)
                     
+                    # Rebuild front layer
                     front_layer = self._build_front_layer(remaining_ops[op_index:])
                 
                 if num_swaps_for_gate > 0:

@@ -77,6 +77,16 @@ class TryTwoQubitOp(Operation):
     def __str__(self) -> str:
         return self.to_mlir()
 
+class  MeasureOp(Operation):
+    def __init__(self, qubit: LogicalQubit):
+        self.qubit = qubit
+    
+    def to_mlir(self) -> str:
+        return f"measure {self.qubit}"
+    
+    def __str__(self) -> str:
+        return self.to_mlir()
+
 
 class InsertSwapOp(Operation):
     def __init__(self, qubit1: PhysicalQubit, qubit2: PhysicalQubit, cost: float = 0.0):
